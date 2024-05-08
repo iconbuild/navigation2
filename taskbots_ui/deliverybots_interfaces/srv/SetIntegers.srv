@@ -1,0 +1,6 @@
+uint8 input_integer
+#uint8[] integers
+---
+uint8 output_integer
+bool success
+string message
