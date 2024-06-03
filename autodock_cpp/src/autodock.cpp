@@ -217,11 +217,9 @@ Status AutoDock::onCycleUpdate()
       do_parallel_correction();
       break;
     case DockState::STEER_DOCK:
-      RCLCPP_INFO(logger_, "Steer Dock.");
       do_steer_dock();
       break;
     case DockState::LAST_MILE:
-      RCLCPP_INFO(logger_, "Last Mile.");
       do_last_mile();
       break;
     case DockState::ACTIVATE_CHARGER:
@@ -424,19 +422,20 @@ bool AutoDock::do_spin(double cmd_yaw){
     return true;
   }
 
-  // // Collision checking
-  // auto cmd_vel = std::make_unique<geometry_msgs::msg::Twist>();
-  // cmd_vel->angular.z = copysign(max_angular_vel, cmd_yaw_);
-  // geometry_msgs::msg::Pose2D pose2d;
-  // pose2d.x = current_pose.pose.position.x;
-  // pose2d.y = current_pose.pose.position.y;
-  // pose2d.theta = tf2::getYaw(current_pose.pose.orientation);
+  // Collision checking
+  auto cmd_vel = std::make_unique<geometry_msgs::msg::Twist>();
+  cmd_vel->angular.z = copysign(max_angular_vel_, cmd_yaw);
+  geometry_msgs::msg::Pose2D pose2d;
+  pose2d.x = current_pose.pose.position.x;
+  pose2d.y = current_pose.pose.position.y;
+  pose2d.theta = tf2::getYaw(current_pose.pose.orientation);
 
-  // if (!isCollisionFree(relative_yaw_, cmd_vel.get(), pose2d)) {
-  //   stopRobot();
-  //   RCLCPP_WARN(logger_, "Collision Ahead - Exiting Spin");
-  //   return Status::FAILED;
-  // }
+  if (!isCollisionFree(cmd_vel.get(), pose2d)) {
+    stopRobot();
+    RCLCPP_WARN(logger_, "Collision Ahead - Exiting Autodock");
+    set_state(DockState::INVALID);
+    return false;
+  }
 
   publish_cmd(0.0,copysign(max_angular_vel_, cmd_yaw));
   return false;
@@ -459,23 +458,23 @@ bool AutoDock::do_move(double cmd_dis, double command_speed){
     return true;
   }
 
-  // Collision checking
-  // auto cmd_vel = std::make_unique<geometry_msgs::msg::Twist>();
-  // cmd_vel->linear.y = 0.0;
-  // cmd_vel->angular.z = 0.0;
-  // cmd_vel->linear.x = command_speed_;
+  //Collision checking
+  auto cmd_vel = std::make_unique<geometry_msgs::msg::Twist>();
+  cmd_vel->linear.y = 0.0;
+  cmd_vel->angular.z = 0.0;
+  cmd_vel->linear.x = command_speed;
 
-  // geometry_msgs::msg::Pose2D pose2d;
-  // pose2d.x = current_pose.pose.position.x;
-  // pose2d.y = current_pose.pose.position.y;
-  // pose2d.theta = tf2::getYaw(current_pose.pose.orientation);
+  geometry_msgs::msg::Pose2D pose2d;
+  pose2d.x = current_pose.pose.position.x;
+  pose2d.y = current_pose.pose.position.y;
+  pose2d.theta = tf2::getYaw(current_pose.pose.orientation);
 
-  // if (!isCollisionFree(distance, cmd_vel.get(), pose2d)) {
-  //    this->stopRobot();
-  //    RCLCPP_WARN(this->logger_, "Collision Ahead - Exiting DriveOnHeading");
-  //    set_state(DockState::INVALID);
-  //    return false;
-  // }
+  if (!isCollisionFree(cmd_vel.get(), pose2d)) {
+     this->stopRobot();
+     RCLCPP_WARN(this->logger_, "Collision Ahead - Exiting DriveOnHeading");
+     set_state(DockState::INVALID);
+     return false;
+  }
 
   publish_cmd(command_speed,0.0);
   return false;
@@ -520,6 +519,30 @@ void AutoDock::do_steer_dock(){
     return;
   }
   double ang_vel = autodock_util::sat_proportional_filter(-offset, 0,max_angular_vel_,offset_to_angular_vel_);
+  
+  // Collision check for autodock
+  geometry_msgs::msg::PoseStamped current_pose;
+  if (!nav2_util::getCurrentPose(current_pose, *tf_, global_frame_, robot_base_frame_, transform_tolerance_))
+  {
+    RCLCPP_ERROR(logger_, "Current robot pose is not available.");
+    set_state(DockState::INVALID);
+    return;
+  }
+  auto cmd_vel = std::make_unique<geometry_msgs::msg::Twist>();
+  cmd_vel->linear.x = dir_*max_linear_vel_;
+  cmd_vel->angular.z = ang_vel;
+  geometry_msgs::msg::Pose2D pose2d;
+  pose2d.x = current_pose.pose.position.x;
+  pose2d.y = current_pose.pose.position.y;
+  pose2d.theta = tf2::getYaw(current_pose.pose.orientation);
+
+  if (!isCollisionFree(cmd_vel.get(), pose2d)) {
+    stopRobot();
+    RCLCPP_WARN(logger_, "Collision Ahead - Exiting Autodock");
+    set_state(DockState::INVALID);
+    return;
+  }
+
   publish_cmd(dir_*max_linear_vel_,ang_vel);
   return;
 }
@@ -534,6 +557,7 @@ void AutoDock::do_last_mile(){
     RCLCPP_WARN(logger_, "Not detecting center marker");
     if (remaining_dis_ < max_last_mile_odom_){
       RCLCPP_WARN(logger_, "Move last mile distance %.3f m with odom", remaining_dis_);
+      do_move(remaining_dis_,min_linear_vel_);
       // set state -> odom_move
       return;
     }
@@ -551,13 +575,14 @@ void AutoDock::do_last_mile(){
   yaw -= 0.5*M_PI;
   remaining_dis_ = -dis - stop_distance_ - cam_offset_;
   RCLCPP_INFO(logger_, " Approaching Charger -> d: %.3f , yaw: %.3f, remaining dis: %.3f", dis,yaw,remaining_dis_);
+  nav2_util::getCurrentPose(move_initial_pose_, *tf_, global_frame_, robot_base_frame_, transform_tolerance_); // Update move_initial_pose for use in odom_last_mile
   // set state -> idle
   if (remaining_dis_ <= 0.0){
     stopRobot();
     set_state(DockState::ACTIVATE_CHARGER,"STOP!! Reached destination");
     return;
   }
-  double ang_vel = autodock_util::sat_proportional_filter(yaw,0.0,min_angular_vel_,0.1);
+  double ang_vel = autodock_util::sat_proportional_filter(yaw,0.0,min_angular_vel_,0.5);
   publish_cmd(dir_*min_linear_vel_,ang_vel);
   
   return;
