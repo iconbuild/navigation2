@@ -114,6 +114,7 @@ protected:
   double transition_dis_with_tol_;
 
   void set_parallel(ParallelCorrection state);
+  void set_parallel(ParallelCorrection state, std::string printout);
   ParallelCorrection parallel_state_;
   double spin_relative_yaw_;
   double prev_yaw_;

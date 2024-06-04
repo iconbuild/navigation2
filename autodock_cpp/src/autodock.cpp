@@ -35,8 +35,8 @@ void AutoDock::onConfigure()
 
   nav2_util::declare_parameter_if_not_declared(
     node,
-    "simulate_ahead_time", rclcpp::ParameterValue(2.0));
-  node->get_parameter("simulate_ahead_time", simulate_ahead_time_);
+    "simulate_ahead_time_dock", rclcpp::ParameterValue(2.0));
+  node->get_parameter("simulate_ahead_time_dock", simulate_ahead_time_);
 
   // nav2_util::declare_parameter_if_not_declared(
   //   node,
@@ -68,7 +68,7 @@ void AutoDock::onConfigure()
     "center_marker", rclcpp::ParameterValue("charge_center"));
   node->get_parameter("center_marker",center_marker_);
   
-  std::vector<double> v = {-0.1,0.1};
+  std::vector<double> v = {-0.2,0.2};
   nav2_util::declare_parameter_if_not_declared(
     node,
     "linear_vel_range", rclcpp::ParameterValue(v));
@@ -177,6 +177,8 @@ Status AutoDock::onRun(const std::shared_ptr<const Action::Goal> command)
 
   RCLCPP_INFO(logger_, "Start Docking Action Now");
   set_state(DockState::PREDOCK,"Predock");
+  set_parallel(ParallelCorrection::START);
+  spin_relative_yaw_ = 0.0;
   command_time_allowance_ = command->time_allowance;
   end_time_ = steady_clock_.now() + command_time_allowance_;
 
@@ -264,6 +266,13 @@ void AutoDock::set_parallel(ParallelCorrection state){
   parallel_state_ = state;
 }
 
+void AutoDock::set_parallel(ParallelCorrection state, std::string printout){
+  parallel_state_ = state;
+  if (debug_mode_){
+    RCLCPP_INFO(logger_,printout.c_str());
+  }
+}
+
 geometry_msgs::msg::PoseStamped AutoDock::get_tf(std::string target_link, std::string ref_link, rclcpp::Time target_time)
 {
   geometry_msgs::msg::PoseStamped current_pose;
@@ -327,12 +336,10 @@ void AutoDock::do_predock(){
    * @brief Function that is run when in the PREDOCK state
    * @details This function will run every cycle update when the state machine is in predock. Possible transitions lead to idle, failed and to steer_dock
   */
-  if (debug_mode_){RCLCPP_INFO(logger_, "Entering predock.");}
   get_center_of_side_markers();
   if (center_tf_.header.frame_id.empty()){
     RCLCPP_ERROR(logger_, "Not detecting two side markers, exit state");
-    set_state(DockState::IDLE);
-    // set state -> idle
+    set_state(DockState::INVALID);
     return;
   }
 
@@ -340,18 +347,18 @@ void AutoDock::do_predock(){
     autodock_util::flip_base_frame(center_tf_);
   }
   double yaw = tf2::getYaw(center_tf_.pose.orientation);
-  if (debug_mode_){
-    RCLCPP_WARN(logger_, "Dis %.3f", center_tf_.pose.position.x);
-    RCLCPP_WARN(logger_, "Offset %.3f", center_tf_.pose.position.y);
-    RCLCPP_WARN(logger_, "Yaw %.3f", yaw);
-  }
+  // if (debug_mode_){
+  //   RCLCPP_WARN(logger_, "Dis %.3f | ", center_tf_.pose.position.x);
+  //   RCLCPP_WARN(logger_, "Offset %.3f", center_tf_.pose.position.y);
+  //   RCLCPP_WARN(logger_, "Yaw %.3f", yaw);
+  // }
   if (std::fabs(yaw) < stop_yaw_diff_){
-    RCLCPP_INFO(logger_, "Done with yaw correction");
+    if (debug_mode_){RCLCPP_INFO(logger_, "Done with yaw correction");}
     stopRobot();
     double y_offset = center_tf_.pose.position.y;
     if (std::fabs(y_offset) > max_parallel_offset_){
       parallel_correction_offset_ = y_offset;
-      set_state(DockState::PARALLEL_CORRECTION,"Parallel correction");
+      set_state(DockState::PARALLEL_CORRECTION);
       if (debug_mode_){RCLCPP_WARN(logger_, "Parallel correction %.3f", y_offset);}
       set_parallel(ParallelCorrection::START);
       return;
@@ -369,31 +376,35 @@ void AutoDock::do_parallel_correction(){
    * @brief Function that runs in state machine PARALLEL_CORRECTION each cycle. Utilizes side markers to correct the robot's orientation.
    * 
   */
-  RCLCPP_INFO(logger_, "Entering parallel correction.");
+  
   switch(parallel_state_){
     case ParallelCorrection::START:
-      spin_relative_yaw_ = 0.0;
-      set_parallel(ParallelCorrection::SPIN_RIGHT);
-      break;
+      {spin_relative_yaw_ = 0.0;
+      geometry_msgs::msg::PoseStamped current_pose;
+      nav2_util::getCurrentPose(current_pose, *tf_, global_frame_, robot_base_frame_, transform_tolerance_);
+      prev_yaw_ = tf2::getYaw(current_pose.pose.orientation);
+      set_parallel(ParallelCorrection::SPIN_RIGHT,"Start spin right");
+      break;}
     case ParallelCorrection::SPIN_RIGHT:
-      if (do_spin(0.5*M_PI)){
+      if (do_spin(-0.5*M_PI)){
         nav2_util::getCurrentPose(move_initial_pose_, *tf_, global_frame_, robot_base_frame_, transform_tolerance_);
+        if (debug_mode_){RCLCPP_INFO(logger_,"Start move offset: %.3f",parallel_correction_offset_);}
         set_parallel(ParallelCorrection::ON_HEADING);
       }
       break;
     case ParallelCorrection::ON_HEADING:
       if (do_move(parallel_correction_offset_,max_linear_vel_)){
         spin_relative_yaw_ = 0.0;
-        set_parallel(ParallelCorrection::SPIN_LEFT);
+        set_parallel(ParallelCorrection::SPIN_LEFT,"Start spin left");
       }
       break;
     case ParallelCorrection::SPIN_LEFT:
-      if (do_spin(-0.5*M_PI)){set_parallel(ParallelCorrection::DONE);}
+      if (do_spin(0.5*M_PI)){set_parallel(ParallelCorrection::DONE,"Parallel correction done");}
       break;
     case ParallelCorrection::DONE:
-      RCLCPP_INFO(logger_, "Parallel correction done");
       parallel_correction_offset_ = 0.0;
       set_state(DockState::PREDOCK,"Restarting predock.");
+      set_parallel(ParallelCorrection::START);
       break;
   }
   return;
@@ -417,6 +428,7 @@ bool AutoDock::do_spin(double cmd_yaw){
   spin_relative_yaw_ += delta_yaw;
   prev_yaw_ = current_yaw;
   double remaining_yaw = abs(cmd_yaw) - abs(spin_relative_yaw_);
+  if (debug_mode_){RCLCPP_INFO(logger_,"Spin mode remaining yaw -> yaw: %.3f, remaining yaw: %.3f", spin_relative_yaw_,remaining_yaw);}
   if (remaining_yaw < 1e-6) {
     stopRobot();
     return true;
@@ -462,7 +474,7 @@ bool AutoDock::do_move(double cmd_dis, double command_speed){
   auto cmd_vel = std::make_unique<geometry_msgs::msg::Twist>();
   cmd_vel->linear.y = 0.0;
   cmd_vel->angular.z = 0.0;
-  cmd_vel->linear.x = command_speed;
+  cmd_vel->linear.x = copysign(command_speed,cmd_dis);
 
   geometry_msgs::msg::Pose2D pose2d;
   pose2d.x = current_pose.pose.position.x;
@@ -476,7 +488,7 @@ bool AutoDock::do_move(double cmd_dis, double command_speed){
      return false;
   }
 
-  publish_cmd(command_speed,0.0);
+  publish_cmd(copysign(command_speed,cmd_dis),0.0);
   return false;
 }
 
@@ -485,7 +497,6 @@ void AutoDock::do_steer_dock(){
    * @brief Function that runs in state machine STEER_DOCK each cycle. Utilizes side markers to steer the robot closer to the charging station.
    * 
   */
-  if (debug_mode_){RCLCPP_INFO(logger_, "Entering steer dock.");}
   get_center_of_side_markers(offset_from_charger_);
   // If sides are not detectable, look for center marker
   if (center_tf_.header.frame_id.empty()){
@@ -499,13 +510,11 @@ void AutoDock::do_steer_dock(){
     if (std::abs(center_tf_.pose.position.x) > transition_dis_with_tol_){
       RCLCPP_WARN(logger_, "Center too far, exit state");
       set_state(DockState::INVALID);
-      // set state -> idle
       return;
     }
     RCLCPP_WARN(logger_, "Center marker %.3f m away, transtion to last_mile", center_tf_.pose.position.x);
     remaining_dis_ = to_last_mile_dis_;
     set_state(DockState::LAST_MILE,"Last Mile.");
-    // set state -> last_mile
     return;
   }
 
@@ -552,13 +561,11 @@ void AutoDock::do_last_mile(){
    * @brief Function that runs in state machine LAST_MILE each cycle. Utilizes the center marker to move the robot closer to the charging station.
    * 
   */
-  if(debug_mode_){RCLCPP_INFO(logger_, "Entering last mile.");}
   if (center_tf_.header.frame_id.empty()){
     RCLCPP_WARN(logger_, "Not detecting center marker");
     if (remaining_dis_ < max_last_mile_odom_){
       RCLCPP_WARN(logger_, "Move last mile distance %.3f m with odom", remaining_dis_);
       do_move(remaining_dis_,min_linear_vel_);
-      // set state -> odom_move
       return;
     }
     else{
@@ -582,9 +589,8 @@ void AutoDock::do_last_mile(){
     set_state(DockState::ACTIVATE_CHARGER,"STOP!! Reached destination");
     return;
   }
-  double ang_vel = autodock_util::sat_proportional_filter(yaw,0.0,min_angular_vel_,0.5);
+  double ang_vel = autodock_util::sat_proportional_filter(-yaw,0.0,min_angular_vel_,0.5);
   publish_cmd(dir_*min_linear_vel_,ang_vel);
-  
   return;
 }
 
