@@ -1,0 +1,5 @@
+<library path="nav2_autodock_behavior_plugin">
+  <class name="nav2_autodock_behavior/AutoDock" type="nav2_autodock_behavior::AutoDock" base_class_type="nav2_core::Behavior">
+    <description>This is a plugin which runs the autodocking action for a 3 tag setup for a diff-drive wheeled robot.</description>
+  </class>
+</library>
