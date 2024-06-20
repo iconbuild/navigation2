@@ -58,6 +58,7 @@ RUN apt-get update && \
       ros-$ROS_DISTRO-rmw-fastrtps-cpp \
       ros-$ROS_DISTRO-rmw-connextdds \
       ros-$ROS_DISTRO-rmw-cyclonedds-cpp \
+      ros-$ROS_DISTRO-slam-toolbox \
     && pip3 install \
       fastcov \
       transforms3d \
@@ -171,8 +172,8 @@ RUN mkdir -p $ROOT_SRV
 RUN apt-get update && apt-get install -y \
       ros-$ROS_DISTRO-aws-robomaker-small-warehouse-world \
       ros-$ROS_DISTRO-rviz2 \
-      ros-$ROS_DISTRO-turtlebot3-simulations
-
+      ros-$ROS_DISTRO-turtlebot3-simulations 
+      
 # install gzweb dependacies
 RUN apt-get install -y --no-install-recommends \
       imagemagick \

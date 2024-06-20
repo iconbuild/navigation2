@@ -25,7 +25,8 @@ from launch.actions import (
 )
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch.substitutions import (AndSubstitution, LaunchConfiguration,
+                                  NotSubstitution, PythonExpression)
 from launch_ros.actions import Node, LoadComposableNodes
 #from launch_ros.actions import PushROSNamespace
 from launch_ros.descriptions import ParameterFile, ComposableNode
@@ -41,9 +42,11 @@ def generate_launch_description():
     namespace = LaunchConfiguration('namespace')
     use_namespace = LaunchConfiguration('use_namespace')
     slam = LaunchConfiguration('slam')
+    localizer_st = LaunchConfiguration('localizer_st')
     map_yaml_file = LaunchConfiguration('map')
     use_sim_time = LaunchConfiguration('use_sim_time')
     params_file = LaunchConfiguration('params_file')
+    slam_params_file = LaunchConfiguration('slam_params_file')
     autostart = LaunchConfiguration('autostart')
     use_composition = LaunchConfiguration('use_composition')
     use_sound = LaunchConfiguration('use_sound')
@@ -203,6 +206,10 @@ def generate_launch_description():
         'slam', default_value='False', description='Whether run a SLAM'
     )
 
+    declare_localizer_cmd = DeclareLaunchArgument(
+        'localizer_st', default_value='True', description='Whether run a SLAM toolbox localization'
+    )
+
     declare_map_yaml_cmd = DeclareLaunchArgument(
         'map', default_value='', description='Full path to map yaml file to load'
     )
@@ -217,6 +224,11 @@ def generate_launch_description():
         'params_file',
         default_value=os.path.join(bringup_dir, 'params', 'nav2_params.yaml'),
         description='Full path to the ROS2 parameters file to use for all launched nodes',
+    )
+
+    declare_slam_params_file_cmd = DeclareLaunchArgument(
+        'slam_params_file',
+        default_value=os.path.join('/nav2_config','localization_slam_toolbox.yaml')   
     )
 
     declare_autostart_cmd = DeclareLaunchArgument(
@@ -234,7 +246,7 @@ def generate_launch_description():
     declare_use_sound_cmd = DeclareLaunchArgument(
         'use_sound',
         default_value='True',
-        description='Whether to use composed bringup',
+        description='Whether to use sound in the launch',
     )
 
     declare_use_respawn_cmd = DeclareLaunchArgument(
@@ -279,7 +291,7 @@ def generate_launch_description():
                 PythonLaunchDescriptionSource(
                     os.path.join(launch_dir, 'localization_launch.py')
                 ),
-                condition=IfCondition(PythonExpression(['not ', slam])),
+                condition=IfCondition(AndSubstitution(NotSubstitution(localizer_st), NotSubstitution(slam))),
                 launch_arguments={
                     'namespace': namespace,
                     'map': map_yaml_file,
@@ -289,6 +301,21 @@ def generate_launch_description():
                     'use_composition': use_composition,
                     'use_respawn': use_respawn,
                     'container_name': 'nav2_container',
+                }.items(),
+            ),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(launch_dir, 'localization_slam_toolbox.py')
+                ),
+                condition=IfCondition(AndSubstitution(localizer_st, NotSubstitution(slam))),
+                launch_arguments={
+                    'namespace': namespace,
+                    'map': map_yaml_file,
+                    'use_sim_time': use_sim_time,
+                    'autostart': autostart,
+                    'slam_params_file': slam_params_file,
+                    'container_name': 'nav2_container',
+                    'params_file': params_file,
                 }.items(),
             ),
             IncludeLaunchDescription(
@@ -337,6 +364,7 @@ def generate_launch_description():
     ld.add_action(declare_namespace_cmd)
     ld.add_action(declare_use_namespace_cmd)
     ld.add_action(declare_slam_cmd)
+    ld.add_action(declare_localizer_cmd)
     ld.add_action(declare_map_yaml_cmd)
     ld.add_action(declare_use_sim_time_cmd)
     ld.add_action(declare_params_file_cmd)
