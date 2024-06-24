@@ -180,7 +180,7 @@ Status AutoDock::onRun(const std::shared_ptr<const Action::Goal> command)
   set_parallel(ParallelCorrection::START);
   spin_relative_yaw_ = 0.0;
   command_time_allowance_ = command->time_allowance;
-  end_time_ = steady_clock_.now() + command_time_allowance_;
+  end_time_ = this->clock_->now() + command_time_allowance_;
 
   return Status::SUCCEEDED; 
 }
@@ -194,7 +194,7 @@ Status AutoDock::onCycleUpdate()
    * @return success or failure under timed behavior param
    */
 
-  rclcpp::Duration time_remaining = end_time_ - steady_clock_.now();
+  rclcpp::Duration time_remaining = end_time_ - this->clock_->now();
   if (time_remaining.seconds() < 0.0 && command_time_allowance_.seconds() > 0.0) {
     stopRobot();
     RCLCPP_WARN(
@@ -280,7 +280,7 @@ geometry_msgs::msg::PoseStamped AutoDock::get_tf(std::string target_link, std::s
     ref_link = robot_base_frame_;
   }
   if (target_time == rclcpp::Time(0)){
-    target_time = steady_clock_.now();
+    target_time = this->clock_->now();
   }
   if (!nav2_util::getCurrentPose(current_pose, *tf_, ref_link, target_link,transform_tolerance_))
   {
