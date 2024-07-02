@@ -203,9 +203,6 @@ Status AutoDock::onCycleUpdate()
     return Status::FAILED;
   }
 
-  left_tf_ = get_tf(left_marker_);
-  right_tf_ = get_tf(right_marker_);
-  center_tf_ = get_tf(center_marker_);
   
   switch(dock_state_){
     case DockState::IDLE:
@@ -308,6 +305,8 @@ void AutoDock::get_center_of_side_markers(double offset=0.0){
    * @brief Get the center of the two side markers
    * @return change to centre_tf
    */
+  left_tf_ = get_tf(left_marker_);
+  right_tf_ = get_tf(right_marker_);
   if (left_tf_.header.frame_id.empty() || right_tf_.header.frame_id.empty()){
     center_tf_ = geometry_msgs::msg::PoseStamped();
   }
@@ -561,6 +560,7 @@ void AutoDock::do_last_mile(){
    * @brief Function that runs in state machine LAST_MILE each cycle. Utilizes the center marker to move the robot closer to the charging station.
    * 
   */
+  center_tf_ = get_tf(center_marker_);
   if (center_tf_.header.frame_id.empty()){
     RCLCPP_WARN(logger_, "Not detecting center marker");
     if (remaining_dis_ < max_last_mile_odom_){
@@ -589,7 +589,7 @@ void AutoDock::do_last_mile(){
     set_state(DockState::ACTIVATE_CHARGER,"STOP!! Reached destination");
     return;
   }
-  double ang_vel = autodock_util::sat_proportional_filter(-yaw,0.0,min_angular_vel_,0.5);
+  double ang_vel = autodock_util::sat_proportional_filter(yaw,0.0,min_angular_vel_,0.5);
   publish_cmd(dir_*min_linear_vel_,ang_vel);
   return;
 }
