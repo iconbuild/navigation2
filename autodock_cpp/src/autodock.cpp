@@ -601,6 +601,9 @@ void AutoDock::do_last_mile(){
       return;
     }
   }
+  else{
+    nav2_util::getCurrentPose(move_initial_pose_, *tf_, global_frame_, robot_base_frame_, transform_tolerance_);
+  }
   
   if (front_dock_){autodock_util::flip_base_frame(center_tf_);}
   double dis = center_tf_.pose.position.x;
