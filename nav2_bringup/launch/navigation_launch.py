@@ -46,7 +46,8 @@ def generate_launch_description():
                        'behavior_server',
                        'bt_navigator',
                        'waypoint_follower',
-                       'velocity_smoother']
+                       'velocity_smoother',
+                       'collision_monitor']
 
     # Map fully qualified names to relative ones so the node's namespace can be prepended.
     # In case of the transforms (tf), currently, there doesn't seem to be a better alternative
@@ -239,7 +240,14 @@ def generate_launch_description():
                 name='velocity_smoother',
                 parameters=[configured_params],
                 remappings=remappings +
-                           [('cmd_vel', 'cmd_vel_nav'), ('cmd_vel_smoothed', 'cmd_vel')]),
+                           [('cmd_vel', 'cmd_vel_nav'),('cmd_vel_smoothed','cmd_vel_raw')]),
+            ComposableNode(
+                        package='nav2_collision_monitor',
+                        plugin='nav2_collision_monitor::CollisionMonitor',
+                        name='collision_monitor',
+                        parameters=[configured_params],
+                        remappings=remappings,
+                    ),
             ComposableNode(
                 package='nav2_lifecycle_manager',
                 plugin='nav2_lifecycle_manager::LifecycleManager',

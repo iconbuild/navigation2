@@ -297,6 +297,12 @@ geometry_msgs::msg::PoseStamped AutoDock::get_tf(std::string target_link)
     geometry_msgs::msg::PoseStamped empty_pose;
     return empty_pose;
   }
+  rclcpp::Duration time_since_seen = this->clock_->now() - current_pose.header.stamp;
+  if (time_since_seen >= rclcpp::Duration::from_seconds(1.0)){
+    geometry_msgs::msg::PoseStamped empty_pose;
+    return empty_pose;
+  }
+
   return current_pose;
 }
 
@@ -337,6 +343,26 @@ void AutoDock::do_predock(){
   */
   get_center_of_side_markers();
   if (center_tf_.header.frame_id.empty()){
+    if (!left_tf_.header.frame_id.empty()){
+      RCLCPP_ERROR(logger_, "Rotate with Left Marker");
+      if (front_dock_){
+        autodock_util::flip_base_frame(left_tf_);
+      }
+      double yaw = tf2::getYaw(left_tf_.pose.orientation);
+      double ang_vel = autodock_util::bin_filter(yaw, min_angular_vel_);
+      publish_cmd(0.0,-ang_vel);
+      return;
+    }
+    if (!right_tf_.header.frame_id.empty()){
+      RCLCPP_ERROR(logger_, "Rotate with Right Marker");
+      if (front_dock_){
+        autodock_util::flip_base_frame(right_tf_);
+      }
+      double yaw = tf2::getYaw(right_tf_.pose.orientation);
+      double ang_vel = autodock_util::bin_filter(yaw, min_angular_vel_);
+      publish_cmd(0.0,ang_vel);
+      return;
+    }
     RCLCPP_ERROR(logger_, "Not detecting two side markers, exit state");
     set_state(DockState::INVALID);
     return;
@@ -346,11 +372,11 @@ void AutoDock::do_predock(){
     autodock_util::flip_base_frame(center_tf_);
   }
   double yaw = tf2::getYaw(center_tf_.pose.orientation);
-  // if (debug_mode_){
-  //   RCLCPP_WARN(logger_, "Dis %.3f | ", center_tf_.pose.position.x);
-  //   RCLCPP_WARN(logger_, "Offset %.3f", center_tf_.pose.position.y);
-  //   RCLCPP_WARN(logger_, "Yaw %.3f", yaw);
-  // }
+  if (debug_mode_){
+    RCLCPP_WARN(logger_, "Dis %.3f | ", center_tf_.pose.position.x);
+    RCLCPP_WARN(logger_, "Offset %.3f", center_tf_.pose.position.y);
+    RCLCPP_WARN(logger_, "Yaw %.3f", yaw);
+  }
   if (std::fabs(yaw) < stop_yaw_diff_){
     if (debug_mode_){RCLCPP_INFO(logger_, "Done with yaw correction");}
     stopRobot();
