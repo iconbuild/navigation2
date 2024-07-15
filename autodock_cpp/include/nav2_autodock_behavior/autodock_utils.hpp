@@ -133,17 +133,18 @@ namespace autodock_util
         return output;
     }
 
-    geometry_msgs::msg::Quaternion flip_yaw(geometry_msgs::msg::Quaternion input){
+    void flip_yaw(geometry_msgs::msg::Quaternion& _input_q){
         /*
         Flip yaw angle by 180 degree, input yaw range should be within
         [-pi, pi] radian. Else use set_angle() fn to fix the convention.
         Output will also be within the same range of [-pi, pi] radian.
         */
-        double _yaw = tf2::getYaw(input);
+        double _yaw = tf2::getYaw(_input_q);
         _yaw = (_yaw >= 0) ? _yaw - M_PI : _yaw + M_PI;
         tf2::Quaternion q;
         q.setRPY(0, 0, _yaw);
-        return tf2::toMsg(q);
+        _input_q = tf2::toMsg(q);
+        // return tf2::toMsg(q);
     }
 
     void flip_base_frame(geometry_msgs::msg::PoseStamped& _pose){
@@ -155,7 +156,7 @@ namespace autodock_util
         
         _pose.pose.position.x = -_pose.pose.position.x;
         _pose.pose.position.y = -_pose.pose.position.y;
-        _pose.pose.orientation = autodock_util::flip_yaw(_pose.pose.orientation);
+        autodock_util::flip_yaw(_pose.pose.orientation);
         // return _pose;
     }
 } // namespace autodock_util

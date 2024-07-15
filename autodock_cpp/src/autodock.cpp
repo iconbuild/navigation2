@@ -150,6 +150,11 @@ void AutoDock::onConfigure()
     "front_dock", rclcpp::ParameterValue(true));
   node->get_parameter("front_dock",front_dock_);
 
+  nav2_util::declare_parameter_if_not_declared(
+    node,
+    "use_sim_time", rclcpp::ParameterValue(true));
+  node->get_parameter("front_dock",use_sim_time_);
+
   dir_ = (front_dock_) ? 1 : -1;
 
   offset_from_charger_ = cam_offset_ + to_last_mile_dis_;
@@ -618,7 +623,10 @@ void AutoDock::do_last_mile(){
     set_state(DockState::ACTIVATE_CHARGER,"STOP!! Reached destination");
     return;
   }
-  double ang_vel = autodock_util::sat_proportional_filter(yaw,0.0,min_angular_vel_,0.5);
+  // For some reason the sim has this yaw-angle flipped
+  double ang_vel;
+  if(use_sim_time_){ang_vel = autodock_util::sat_proportional_filter(yaw,0.0,min_angular_vel_,0.5);}
+  else{ang_vel = autodock_util::sat_proportional_filter(-yaw,0.0,min_angular_vel_,0.5);}
   publish_cmd(dir_*min_linear_vel_,ang_vel);
   return;
 }

@@ -101,6 +101,7 @@ protected:
   double stop_distance_; //  # edge2edge distance to stop from charger
   double remaining_dis_;
   bool front_dock_; // = True
+  bool use_sim_time_; // = False
 
   double offset_from_charger_;
   
