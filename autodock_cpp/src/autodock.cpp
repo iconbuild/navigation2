@@ -153,7 +153,7 @@ void AutoDock::onConfigure()
   nav2_util::declare_parameter_if_not_declared(
     node,
     "use_sim_time", rclcpp::ParameterValue(true));
-  node->get_parameter("front_dock",use_sim_time_);
+  node->get_parameter("use_sim_time",use_sim_time_);
 
   dir_ = (front_dock_) ? 1 : -1;
 
